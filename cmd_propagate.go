@@ -38,10 +38,16 @@ func cmdPropagate(args []string) {
 	}
 
 	resolvers := propagation.DefaultResolvers
+	cfg := currentConfig()
 	if strings.TrimSpace(*resolverList) != "" {
 		resolvers = splitCSV(*resolverList)
 	} else if len(profiles) > 0 {
-		resolvers, err = propagation.ResolversForProfiles(profiles)
+		resolvers, err = propagation.ResolversForProfilesWithCustom(profiles, cfg.Profiles)
+		if err != nil {
+			fatal(err.Error())
+		}
+	} else if len(cfg.PropagateProfiles) > 0 {
+		resolvers, err = propagation.ResolversForProfilesWithCustom(cfg.PropagateProfiles, cfg.Profiles)
 		if err != nil {
 			fatal(err.Error())
 		}

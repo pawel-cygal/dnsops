@@ -166,16 +166,31 @@ func FirstError(report Report) error {
 }
 
 func AvailableProfiles() []string {
+	return AvailableProfilesWithCustom(nil)
+}
+
+func AvailableProfilesWithCustom(custom map[string][]string) []string {
 	out := append([]string(nil), globalProfileOrder...)
+	for name := range normalizeCustomProfiles(custom) {
+		name = normalizeProfile(name)
+		if name != "" && name != "global" && !slices.Contains(out, name) {
+			out = append(out, name)
+		}
+	}
 	out = append(out, "global")
 	sort.Strings(out)
 	return out
 }
 
 func ResolversForProfiles(profiles []string) ([]string, error) {
+	return ResolversForProfilesWithCustom(profiles, nil)
+}
+
+func ResolversForProfilesWithCustom(profiles []string, custom map[string][]string) ([]string, error) {
 	if len(profiles) == 0 {
 		return append([]string(nil), DefaultResolvers...), nil
 	}
+	custom = normalizeCustomProfiles(custom)
 	seen := map[string]bool{}
 	var out []string
 	add := func(list []string) {
@@ -193,11 +208,19 @@ func ResolversForProfiles(profiles []string) ([]string, error) {
 			for _, name := range globalProfileOrder {
 				add(regionalProfiles[name])
 			}
+			for name, list := range custom {
+				if normalizeProfile(name) != "" {
+					add(list)
+				}
+			}
 			continue
 		}
-		list, ok := regionalProfiles[profile]
+		list, ok := custom[profile]
 		if !ok {
-			return nil, fmt.Errorf("unknown resolver profile %q (available: %s)", profile, strings.Join(AvailableProfiles(), ", "))
+			list, ok = regionalProfiles[profile]
+		}
+		if !ok {
+			return nil, fmt.Errorf("unknown resolver profile %q (available: %s)", profile, strings.Join(AvailableProfilesWithCustom(custom), ", "))
 		}
 		add(list)
 	}
@@ -208,4 +231,15 @@ func normalizeProfile(name string) string {
 	name = strings.TrimSpace(strings.ToLower(name))
 	name = strings.ReplaceAll(name, "_", "-")
 	return strings.ReplaceAll(name, " ", "-")
+}
+
+func normalizeCustomProfiles(in map[string][]string) map[string][]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string][]string, len(in))
+	for name, list := range in {
+		out[normalizeProfile(name)] = list
+	}
+	return out
 }

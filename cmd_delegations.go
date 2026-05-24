@@ -14,7 +14,7 @@ import (
 func cmdDelegations(args []string) {
 	args = normalizeFlagArgs(args, map[string]bool{"--resolver": true})
 	fs := flag.NewFlagSet("delegations", flag.ExitOnError)
-	resolver := fs.String("resolver", "1.1.1.1:53", "resolver used to discover the delegation")
+	resolver := fs.String("resolver", defaultResolver(), "resolver used to discover the delegation")
 	jsonOut := fs.Bool("json", false, "emit JSON")
 	_ = fs.Parse(args)
 	if len(fs.Args()) != 1 {

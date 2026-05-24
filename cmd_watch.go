@@ -39,6 +39,7 @@ const (
 	outputRaw  outputFormat = "raw"
 	outputJSON outputFormat = "json"
 	outputYAML outputFormat = "yaml"
+	outputProm outputFormat = "prom"
 )
 
 type watchEnvelope struct {

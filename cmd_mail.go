@@ -23,29 +23,78 @@ func (m *multiString) Set(v string) error {
 }
 
 func cmdMail(args []string) {
-	args = normalizeFlagArgs(args, map[string]bool{"--resolver": true, "--selector": true})
+	args = normalizeFlagArgs(args, map[string]bool{"--resolver": true, "--selector": true, "--input": true})
 	fs := flag.NewFlagSet("mail", flag.ExitOnError)
-	resolver := fs.String("resolver", "1.1.1.1:53", "DNS resolver to query")
+	resolver := fs.String("resolver", defaultResolver(), "DNS resolver to query")
 	jsonOut := fs.Bool("json", false, "emit JSON")
+	yamlOut := fs.Bool("yaml", false, "emit YAML")
+	promOut := fs.Bool("prom", false, "emit Prometheus text format")
+	input := fs.String("input", "", "file with domains to check, one per line")
 	var selectors multiString
 	fs.Var(&selectors, "selector", "DKIM selector to check (repeatable)")
 	_ = fs.Parse(args)
-	if len(fs.Args()) != 1 {
-		fatal("usage: dnsops mail <domain> [--resolver IP:PORT] [--selector default] [--json]")
+	if len(fs.Args()) == 0 && *input == "" {
+		fatal("usage: dnsops mail <domain> [domain...] [--resolver IP:PORT] [--selector default] [--input path] [--json|--yaml|--prom]")
 	}
-	domain := fs.Arg(0)
+	format, err := resolveStructuredOutput(*jsonOut, *yamlOut, *promOut)
+	if err != nil {
+		fatal(err.Error())
+	}
+	domains, err := mergeTargets(fs.Args(), *input)
+	if err != nil {
+		fatal(err.Error())
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
 
-	report := mailcheck.Run(ctx, *resolver, domain, selectors)
-	if *jsonOut {
-		printJSON(report)
+	reports := make([]mailcheck.Report, 0, len(domains))
+	hadErr := false
+	for _, domain := range domains {
+		report := mailcheck.Run(ctx, *resolver, domain, selectors)
 		if report.Errors > 0 {
+			hadErr = true
+		}
+		reports = append(reports, report)
+	}
+
+	switch format {
+	case outputJSON:
+		if len(reports) == 1 {
+			printJSON(reports[0])
+		} else {
+			printJSON(reports)
+		}
+		if hadErr {
+			exitCode(1)
+		}
+		return
+	case outputYAML:
+		if len(reports) == 1 {
+			printYAML(reports[0])
+		} else {
+			printYAML(reports)
+		}
+		if hadErr {
+			exitCode(1)
+		}
+		return
+	case outputProm:
+		printMailProm(reports)
+		if hadErr {
 			exitCode(1)
 		}
 		return
 	}
 
+	for _, report := range reports {
+		renderMail(report)
+	}
+	if hadErr {
+		exitCode(1)
+	}
+}
+
+func renderMail(report mailcheck.Report) {
 	fmt.Printf("%s  mail report\n", report.Domain)
 	fmt.Printf("resolver: %s\n\n", report.Resolver)
 	if len(report.MX) > 0 {
@@ -88,7 +137,5 @@ func cmdMail(args []string) {
 		fmt.Println()
 	}
 	fmt.Printf("summary: %d error(s), %d warning(s)\n", report.Errors, report.Warnings)
-	if report.Errors > 0 {
-		exitCode(1)
-	}
+	fmt.Println()
 }

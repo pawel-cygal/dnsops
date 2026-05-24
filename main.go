@@ -46,16 +46,16 @@ func usage() {
 
 Usage:
   dnsops lookup <name> <type> [--resolver IP:PORT] [--json|--yaml] [--ttl] [--watch] [--interval 5s] [--timeout 1m] [--max-iterations 60]
-  dnsops reverse <ip> [--resolver IP:PORT] [--json|--yaml]
-  dnsops caa <domain> [--resolver IP:PORT] [--json|--yaml]
+  dnsops reverse <ip> [ip...] [--resolver IP:PORT] [--input path] [--json|--yaml]
+  dnsops caa <domain> [domain...] [--resolver IP:PORT] [--input path] [--json|--yaml]
   dnsops soa <zone> [--resolver IP:PORT] [--json]
   dnsops delegations <zone> [--resolver IP:PORT] [--json]
   dnsops propagate <name> <type> [--profile global] [--profile eu] [--resolvers ip:53,ip:53] [--json|--yaml] [--watch] [--interval 5s] [--timeout 1m] [--max-iterations 60] [--until-ok]
   dnsops compare <name> <type> [--baseline ip:53] [--profile global] [--profile eu] [--resolvers ip:53,ip:53] [--authoritative] [--json|--yaml] [--watch] [--interval 5s] [--timeout 1m] [--max-iterations 60] [--until-ok]
-  dnsops mail <domain> [--resolver IP:PORT] [--selector default] [--json]
-  dnsops verify -f dns.yaml [--resolver IP:PORT] [--json|--yaml] [--watch] [--interval 5s] [--timeout 1m] [--max-iterations 60] [--until-ok]
-  dnsops expiry <domain> [domain...] [--warn-days 60] [--critical-days 14] [--json]
-  dnsops dnssec <domain> [--resolver IP:PORT] [--json]
+  dnsops mail <domain> [domain...] [--resolver IP:PORT] [--selector default] [--input path] [--json|--yaml|--prom]
+  dnsops verify -f dns.yaml [--resolver IP:PORT] [--json|--yaml|--prom] [--watch] [--interval 5s] [--timeout 1m] [--max-iterations 60] [--until-ok]
+  dnsops expiry <domain> [domain...] [--input path] [--warn-days 60] [--critical-days 14] [--json|--yaml|--prom]
+  dnsops dnssec <domain> [domain...] [--resolver IP:PORT] [--input path] [--json|--yaml|--prom]
 
 `)
 }

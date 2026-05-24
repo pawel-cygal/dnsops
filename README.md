@@ -40,7 +40,9 @@ dnsops lookup app.example.com A
 dnsops lookup app.example.com A --ttl
 dnsops lookup app.example.com A --ttl --watch --interval 1s
 dnsops reverse 203.0.113.10
+dnsops reverse --input ips.txt --yaml
 dnsops caa example.com
+dnsops caa --input domains.txt --json
 dnsops lookup example.com MX --resolver 1.1.1.1:53
 dnsops lookup _dmarc.example.com TXT --json
 
@@ -56,14 +58,60 @@ dnsops compare app.example.com A --authoritative
 dnsops compare app.example.com A --authoritative --watch --interval 2s
 
 dnsops mail example.com --selector default --selector google
+dnsops mail --input domains.txt --yaml
+dnsops mail --input domains.txt --prom
 dnsops verify -f dns.yaml
 dnsops verify -f dns.yaml --watch
 dnsops verify -f dns.yaml --yaml
+dnsops verify -f dns.yaml --prom
 dnsops expiry example.com example.org
+dnsops expiry --input domains.txt --yaml
+dnsops expiry --input domains.txt --prom
 dnsops dnssec example.com
+dnsops dnssec --input domains.txt --json
+dnsops dnssec --input domains.txt --prom
 ```
 
 Flags may be placed after positional arguments in the examples above; the CLI normalizes them before parsing.
+
+## Config file
+
+`dnsops` can load defaults from:
+
+```text
+~/.config/dnsops/config.yaml
+```
+
+or from a custom path via:
+
+```bash
+DNSOPS_CONFIG=/path/to/config.yaml dnsops ...
+```
+
+Current supported config keys:
+
+```yaml
+resolver: 1.1.1.1:53
+output: raw
+
+profiles:
+  corp:
+    - 10.0.0.53:53
+    - 10.0.0.54:53
+
+propagate_profiles:
+  - corp
+
+compare_profiles:
+  - corp
+```
+
+Notes:
+- `resolver` becomes the default resolver for commands that query a single resolver
+- `output` can be `raw`, `json`, or `yaml`
+- `profiles` adds custom resolver profiles on top of the built-in ones
+- `propagate_profiles` and `compare_profiles` act as defaults when `--resolvers` / `--profile` are not passed
+- `global` still means the union of all built-in and custom profiles
 
 ## Command notes
 
@@ -87,6 +135,7 @@ Current scope:
 - reverse PTR lookup for IPv4 and IPv6 addresses
 - plain text, `--json`, or `--yaml`
 - optional custom resolver via `--resolver`
+- optional batch input via `--input`
 
 Good fit for:
 - validating PTRs during mail / reverse-DNS checks
@@ -98,6 +147,7 @@ Current scope:
 - fetches `CAA` records for a domain
 - plain text, `--json`, or `--yaml`
 - optional custom resolver via `--resolver`
+- optional batch input via `--input`
 
 Good fit for:
 - confirming which CAs are currently authorized
@@ -203,12 +253,15 @@ Current scope:
 - SPF presence + rough DNS-lookup count heuristic
 - DMARC presence
 - optional DKIM selector presence via repeated `--selector`
+- supports multiple positional domains or `--input`
+- supports `--yaml` and Prometheus text output via `--prom`
 - exits non-zero on hard failures; warnings stay informational
 
 Typical use:
 
 ```bash
 dnsops mail example.com --selector default --selector google
+dnsops mail --input domains.txt --prom
 ```
 
 ### `verify`
@@ -222,6 +275,7 @@ Current scope:
 - `min_ttl` / `max_ttl`
 - resolver-based verification with text or JSON output
 - optional YAML output via `--yaml`
+- Prometheus text output via `--prom`
 - supports `--watch`, `--interval`, and `--until-ok`
 - supports `--timeout` and `--max-iterations`
 
@@ -265,6 +319,9 @@ checks:
 
 Current scope:
 - RDAP lookup through `https://rdap.org/domain/<domain>`
+- supports multiple positional domains or `--input`
+- supports `--yaml` in addition to `--json`
+- supports Prometheus text output via `--prom`
 - registrar name when present
 - nameservers and status list when present
 - expiration date + days remaining
@@ -284,6 +341,9 @@ Current scope:
 - checks whether the child publishes `DNSKEY`
 - checks whether the parent publishes `DS`
 - checks whether the `DNSKEY` RRset is signed with `RRSIG`
+- supports multiple positional domains or `--input`
+- supports `--yaml` in addition to `--json`
+- supports Prometheus text output via `--prom`
 - classifies the result as:
   - `signed`
   - `unsigned`
@@ -300,6 +360,7 @@ The tool currently supports:
 - readable terminal output by default
 - `--json` on commands where machine-readable output is useful
 - `--yaml` on commands where human-readable structured output is useful
+- `--prom` on `verify`, `expiry`, and `dnssec` for textfile-exporter / scraping workflows
 
 Watch mode:
 - `propagate`, `compare`, and `verify` support `--watch`

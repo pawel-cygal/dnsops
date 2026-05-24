@@ -18,7 +18,7 @@ func cmdCompare(args []string) {
 	fs := flag.NewFlagSet("compare", flag.ExitOnError)
 	jsonOut := fs.Bool("json", false, "emit JSON")
 	yamlOut := fs.Bool("yaml", false, "emit YAML")
-	baseline := fs.String("baseline", "1.1.1.1:53", "baseline resolver")
+	baseline := fs.String("baseline", defaultResolver(), "baseline resolver")
 	resolverList := fs.String("resolvers", "", "comma-separated resolvers to compare against the baseline")
 	var profiles multiString
 	fs.Var(&profiles, "profile", "resolver profile to compare against the baseline (repeatable)")
@@ -42,10 +42,16 @@ func cmdCompare(args []string) {
 		fatal(err.Error())
 	}
 	resolvers := propagation.DefaultResolvers
+	cfg := currentConfig()
 	if strings.TrimSpace(*resolverList) != "" {
 		resolvers = splitCSV(*resolverList)
 	} else if len(profiles) > 0 {
-		resolvers, err = propagation.ResolversForProfiles(profiles)
+		resolvers, err = propagation.ResolversForProfilesWithCustom(profiles, cfg.Profiles)
+		if err != nil {
+			fatal(err.Error())
+		}
+	} else if len(cfg.CompareProfiles) > 0 {
+		resolvers, err = propagation.ResolversForProfilesWithCustom(cfg.CompareProfiles, cfg.Profiles)
 		if err != nil {
 			fatal(err.Error())
 		}

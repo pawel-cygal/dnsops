@@ -13,7 +13,7 @@ import (
 func cmdLookup(args []string) {
 	args = normalizeFlagArgs(args, map[string]bool{"--resolver": true, "--interval": true, "--timeout": true, "--max-iterations": true})
 	fs := flag.NewFlagSet("lookup", flag.ExitOnError)
-	resolver := fs.String("resolver", "1.1.1.1:53", "DNS resolver to query")
+	resolver := fs.String("resolver", defaultResolver(), "DNS resolver to query")
 	jsonOut := fs.Bool("json", false, "emit JSON")
 	yamlOut := fs.Bool("yaml", false, "emit YAML")
 	ttlOut := fs.Bool("ttl", false, "show TTL-aware answers via raw DNS queries")

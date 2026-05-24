@@ -70,3 +70,15 @@ func TestResolversForProfilesUnknown(t *testing.T) {
 		t.Fatal("expected unknown profile error")
 	}
 }
+
+func TestResolversForProfilesWithCustom(t *testing.T) {
+	resolvers, err := ResolversForProfilesWithCustom([]string{"corp"}, map[string][]string{
+		"corp": {"10.0.0.53:53", "10.0.0.54:53"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resolvers) != 2 || resolvers[0] != "10.0.0.53:53" || resolvers[1] != "10.0.0.54:53" {
+		t.Fatalf("unexpected custom profile resolvers: %v", resolvers)
+	}
+}

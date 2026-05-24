@@ -9,27 +9,27 @@ import (
 )
 
 type Finding struct {
-	Severity string `json:"severity"`
-	Scope    string `json:"scope"`
-	Message  string `json:"message"`
+	Severity string `json:"severity" yaml:"severity"`
+	Scope    string `json:"scope" yaml:"scope"`
+	Message  string `json:"message" yaml:"message"`
 }
 
 type DKIMRow struct {
-	Selector string   `json:"selector"`
-	Values   []string `json:"values,omitempty"`
-	Error    string   `json:"error,omitempty"`
+	Selector string   `json:"selector" yaml:"selector"`
+	Values   []string `json:"values,omitempty" yaml:"values,omitempty"`
+	Error    string   `json:"error,omitempty" yaml:"error,omitempty"`
 }
 
 type Report struct {
-	Domain   string    `json:"domain"`
-	Resolver string    `json:"resolver"`
-	MX       []string  `json:"mx,omitempty"`
-	SPF      []string  `json:"spf,omitempty"`
-	DMARC    []string  `json:"dmarc,omitempty"`
-	DKIM     []DKIMRow `json:"dkim,omitempty"`
-	Findings []Finding `json:"findings"`
-	Errors   int       `json:"errors"`
-	Warnings int       `json:"warnings"`
+	Domain   string    `json:"domain" yaml:"domain"`
+	Resolver string    `json:"resolver" yaml:"resolver"`
+	MX       []string  `json:"mx,omitempty" yaml:"mx,omitempty"`
+	SPF      []string  `json:"spf,omitempty" yaml:"spf,omitempty"`
+	DMARC    []string  `json:"dmarc,omitempty" yaml:"dmarc,omitempty"`
+	DKIM     []DKIMRow `json:"dkim,omitempty" yaml:"dkim,omitempty"`
+	Findings []Finding `json:"findings" yaml:"findings"`
+	Errors   int       `json:"errors" yaml:"errors"`
+	Warnings int       `json:"warnings" yaml:"warnings"`
 }
 
 func Run(ctx context.Context, resolver, domain string, selectors []string) Report {

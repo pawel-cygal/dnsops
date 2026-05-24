@@ -15,59 +15,88 @@ import (
 )
 
 func cmdReverse(args []string) {
-	args = normalizeFlagArgs(args, map[string]bool{"--resolver": true})
+	args = normalizeFlagArgs(args, map[string]bool{"--resolver": true, "--input": true})
 	fs := flag.NewFlagSet("reverse", flag.ExitOnError)
-	resolver := fs.String("resolver", "1.1.1.1:53", "DNS resolver to query")
+	resolver := fs.String("resolver", defaultResolver(), "DNS resolver to query")
 	jsonOut := fs.Bool("json", false, "emit JSON")
 	yamlOut := fs.Bool("yaml", false, "emit YAML")
+	input := fs.String("input", "", "file with IPs to check, one per line")
 	_ = fs.Parse(args)
-	if len(fs.Args()) != 1 {
-		fatal("usage: dnsops reverse <ip> [--resolver IP:PORT] [--json|--yaml]")
+	if len(fs.Args()) == 0 && *input == "" {
+		fatal("usage: dnsops reverse <ip> [ip...] [--resolver IP:PORT] [--input path] [--json|--yaml]")
 	}
 	format, err := resolveOutputFormat(*jsonOut, *yamlOut)
 	if err != nil {
 		fatal(err.Error())
 	}
-	ip := fs.Arg(0)
-	ptrName, err := reverseName(ip)
+	ips, err := mergeTargets(fs.Args(), *input)
 	if err != nil {
 		fatal(err.Error())
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	records, err := rawdns.Query(ctx, *resolver, ptrName, "PTR")
-	if err != nil {
-		fatal(err.Error())
-	}
-	report := struct {
+	type report struct {
 		IP       string          `json:"ip" yaml:"ip"`
-		Name     string          `json:"name" yaml:"name"`
+		Name     string          `json:"name,omitempty" yaml:"name,omitempty"`
 		Resolver string          `json:"resolver" yaml:"resolver"`
-		Answers  []rawdns.Record `json:"answers" yaml:"answers"`
-	}{
-		IP:       ip,
-		Name:     ptrName,
-		Resolver: dnsquery.NormalizeResolver(*resolver),
-		Answers:  records,
+		Answers  []rawdns.Record `json:"answers,omitempty" yaml:"answers,omitempty"`
+		Error    string          `json:"error,omitempty" yaml:"error,omitempty"`
+	}
+	reports := make([]report, 0, len(ips))
+	hadErr := false
+	for _, ip := range ips {
+		rep := report{
+			IP:       ip,
+			Resolver: dnsquery.NormalizeResolver(*resolver),
+		}
+		ptrName, err := reverseName(ip)
+		if err != nil {
+			rep.Error = err.Error()
+			hadErr = true
+			reports = append(reports, rep)
+			continue
+		}
+		rep.Name = ptrName
+		records, err := rawdns.Query(ctx, *resolver, ptrName, "PTR")
+		if err != nil {
+			rep.Error = err.Error()
+			hadErr = true
+		} else {
+			rep.Answers = records
+		}
+		reports = append(reports, rep)
 	}
 	switch format {
 	case outputJSON:
-		printJSON(report)
+		printJSON(reports)
 	case outputYAML:
-		printYAML(report)
+		printYAML(reports)
 	default:
-		fmt.Printf("%s  PTR\n", report.IP)
-		fmt.Printf("name: %s\n", report.Name)
-		fmt.Printf("resolver: %s\n\n", report.Resolver)
-		if len(report.Answers) == 0 {
-			fmt.Println("(no PTR answers)")
-			return
+		for _, report := range reports {
+			fmt.Printf("%s  PTR\n", report.IP)
+			if report.Name != "" {
+				fmt.Printf("name: %s\n", report.Name)
+			}
+			fmt.Printf("resolver: %s\n\n", report.Resolver)
+			if report.Error != "" {
+				fmt.Printf("error: %s\n\n", report.Error)
+				continue
+			}
+			if len(report.Answers) == 0 {
+				fmt.Println("(no PTR answers)")
+				fmt.Println()
+				continue
+			}
+			rows := make([][]string, 0, len(report.Answers))
+			for _, rec := range report.Answers {
+				rows = append(rows, []string{fmt.Sprintf("%d", rec.TTL), rec.Data})
+			}
+			renderTable([]string{"ttl", "ptr"}, rows)
+			fmt.Println()
 		}
-		rows := make([][]string, 0, len(report.Answers))
-		for _, rec := range report.Answers {
-			rows = append(rows, []string{fmt.Sprintf("%d", rec.TTL), rec.Data})
-		}
-		renderTable([]string{"ttl", "ptr"}, rows)
+	}
+	if hadErr {
+		exitCode(1)
 	}
 }
 

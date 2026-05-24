@@ -133,7 +133,14 @@ func resolveOutputFormat(jsonOut, yamlOut bool) (outputFormat, error) {
 	if yamlOut {
 		return outputYAML, nil
 	}
-	return outputRaw, nil
+	switch defaultOutput() {
+	case "json":
+		return outputJSON, nil
+	case "yaml":
+		return outputYAML, nil
+	default:
+		return outputRaw, nil
+	}
 }
 
 func visibleLen(s string) int {

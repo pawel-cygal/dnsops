@@ -13,7 +13,7 @@ import (
 func cmdSOA(args []string) {
 	args = normalizeFlagArgs(args, map[string]bool{"--resolver": true})
 	fs := flag.NewFlagSet("soa", flag.ExitOnError)
-	resolver := fs.String("resolver", "1.1.1.1:53", "DNS resolver to query")
+	resolver := fs.String("resolver", defaultResolver(), "DNS resolver to query")
 	jsonOut := fs.Bool("json", false, "emit JSON")
 	_ = fs.Parse(args)
 	if len(fs.Args()) != 1 {
@@ -29,7 +29,7 @@ func cmdSOA(args []string) {
 	}
 	if *jsonOut {
 		printJSON(struct {
-			Resolver string          `json:"resolver"`
+			Resolver string           `json:"resolver"`
 			SOA      rawdns.SOAResult `json:"soa"`
 		}{Resolver: dnsquery.NormalizeResolver(*resolver), SOA: soa})
 		return
