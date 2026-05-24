@@ -6,8 +6,11 @@ import (
 	"sort"
 	"strings"
 
+	"dnsops/internal/dnsquery"
 	"dnsops/internal/rawdns"
 )
+
+var dnsqueryQuery = dnsquery.Query
 
 type NSCheck struct {
 	Nameserver    string              `json:"nameserver"`
@@ -19,6 +22,7 @@ type NSCheck struct {
 	GlueMissing   bool                `json:"glue_missing,omitempty"`
 	PossibleLame  bool                `json:"possible_lame,omitempty"`
 	AddressErrors []string            `json:"address_errors,omitempty"`
+	LameReasons   []string            `json:"lame_reasons,omitempty"`
 	Error         string              `json:"error,omitempty"`
 }
 
@@ -84,20 +88,36 @@ func Run(ctx context.Context, discoveryResolver, zone string) (Report, error) {
 		}
 		check.Glue = glueFor(report.ParentChecks, ns)
 		check.GlueMissing = check.GlueExpected && len(check.Glue) == 0
+		check.AddressErrors = nameserverAddressErrors(ctx, discoveryResolver, ns)
+		if len(check.AddressErrors) > 0 {
+			check.LameReasons = append(check.LameReasons, check.AddressErrors...)
+		}
 		nsRecords, err := rawdns.Query(ctx, ns, zone, "NS")
 		if err != nil {
 			check.Error = err.Error()
 			check.PossibleLame = true
+			check.LameReasons = append(check.LameReasons, "zone NS query failed")
 			report.ChildChecks = append(report.ChildChecks, check)
 			continue
 		}
 		check.NS = recordData(nsRecords)
+		if len(check.NS) == 0 {
+			check.PossibleLame = true
+			check.LameReasons = append(check.LameReasons, "zone NS query returned no answers")
+		}
 		soa, err := rawdns.LookupSOA(ctx, ns, zone)
 		if err != nil {
 			check.Error = err.Error()
 			check.PossibleLame = true
+			check.LameReasons = append(check.LameReasons, "SOA query failed")
 		} else {
 			check.SOA = &soa
+		}
+		if check.GlueMissing {
+			check.LameReasons = append(check.LameReasons, "required parent-side glue is missing")
+		}
+		if addressReachabilityBroken(check.AddressErrors) {
+			check.PossibleLame = true
 		}
 		report.ChildChecks = append(report.ChildChecks, check)
 	}
@@ -254,6 +274,46 @@ func possibleLame(checks []NSCheck) bool {
 		}
 	}
 	return false
+}
+
+func nameserverAddressErrors(ctx context.Context, resolver, nameserver string) []string {
+	var errs []string
+	aRes, aErr := dnsqueryQuery(ctx, resolver, nameserver, "A")
+	aaaaRes, aaaaErr := dnsqueryQuery(ctx, resolver, nameserver, "AAAA")
+	if aErr != nil {
+		errs = append(errs, "A lookup failed: "+aErr.Error())
+	}
+	if aaaaErr != nil {
+		errs = append(errs, "AAAA lookup failed: "+aaaaErr.Error())
+	}
+	aOK := aErr == nil && len(aRes.Values) > 0
+	aaaaOK := aaaaErr == nil && len(aaaaRes.Values) > 0
+	if !aOK && !aaaaOK && aErr == nil && aaaaErr == nil {
+		errs = append(errs, "no A/AAAA address records found for nameserver")
+	}
+	return errs
+}
+
+func addressReachabilityBroken(errs []string) bool {
+	if len(errs) == 0 {
+		return false
+	}
+	for _, err := range errs {
+		if strings.Contains(err, "no A/AAAA address records found for nameserver") {
+			return true
+		}
+	}
+	aFailed := false
+	aaaaFailed := false
+	for _, err := range errs {
+		if strings.HasPrefix(err, "A lookup failed:") {
+			aFailed = true
+		}
+		if strings.HasPrefix(err, "AAAA lookup failed:") {
+			aaaaFailed = true
+		}
+	}
+	return aFailed && aaaaFailed
 }
 
 func sortedCopy(in []string) []string {

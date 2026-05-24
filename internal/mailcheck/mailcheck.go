@@ -8,6 +8,8 @@ import (
 	"dnsops/internal/dnsquery"
 )
 
+var query = dnsquery.Query
+
 type Finding struct {
 	Severity string `json:"severity" yaml:"severity"`
 	Scope    string `json:"scope" yaml:"scope"`
@@ -21,21 +23,23 @@ type DKIMRow struct {
 }
 
 type Report struct {
-	Domain   string    `json:"domain" yaml:"domain"`
-	Resolver string    `json:"resolver" yaml:"resolver"`
-	MX       []string  `json:"mx,omitempty" yaml:"mx,omitempty"`
-	SPF      []string  `json:"spf,omitempty" yaml:"spf,omitempty"`
-	DMARC    []string  `json:"dmarc,omitempty" yaml:"dmarc,omitempty"`
-	DKIM     []DKIMRow `json:"dkim,omitempty" yaml:"dkim,omitempty"`
-	Findings []Finding `json:"findings" yaml:"findings"`
-	Errors   int       `json:"errors" yaml:"errors"`
-	Warnings int       `json:"warnings" yaml:"warnings"`
+	Domain              string    `json:"domain" yaml:"domain"`
+	Resolver            string    `json:"resolver" yaml:"resolver"`
+	MX                  []string  `json:"mx,omitempty" yaml:"mx,omitempty"`
+	SPF                 []string  `json:"spf,omitempty" yaml:"spf,omitempty"`
+	SPFEffectiveLookups int       `json:"spf_effective_lookups,omitempty" yaml:"spf_effective_lookups,omitempty"`
+	DMARC               []string  `json:"dmarc,omitempty" yaml:"dmarc,omitempty"`
+	MTASTS              []string  `json:"mta_sts,omitempty" yaml:"mta_sts,omitempty"`
+	DKIM                []DKIMRow `json:"dkim,omitempty" yaml:"dkim,omitempty"`
+	Findings            []Finding `json:"findings" yaml:"findings"`
+	Errors              int       `json:"errors" yaml:"errors"`
+	Warnings            int       `json:"warnings" yaml:"warnings"`
 }
 
 func Run(ctx context.Context, resolver, domain string, selectors []string) Report {
 	report := Report{Domain: domain, Resolver: dnsquery.NormalizeResolver(resolver)}
 
-	mxRes, mxErr := dnsquery.Query(ctx, resolver, domain, "MX")
+	mxRes, mxErr := query(ctx, resolver, domain, "MX")
 	if mxErr != nil {
 		add(&report, "error", "mx", mxErr.Error())
 	} else {
@@ -51,7 +55,7 @@ func Run(ctx context.Context, resolver, domain string, selectors []string) Repor
 		}
 	}
 
-	txtRes, txtErr := dnsquery.Query(ctx, resolver, domain, "TXT")
+	txtRes, txtErr := query(ctx, resolver, domain, "TXT")
 	if txtErr != nil {
 		add(&report, "warn", "spf", txtErr.Error())
 	} else {
@@ -59,15 +63,24 @@ func Run(ctx context.Context, resolver, domain string, selectors []string) Repor
 		if len(report.SPF) == 0 {
 			add(&report, "warn", "spf", "no SPF record found")
 		}
+		maxLookups := 0
 		for _, spf := range report.SPF {
-			if n := countSPFLookups(spf); n > 10 {
-				add(&report, "warn", "spf", fmt.Sprintf("SPF record may exceed 10 DNS lookups (%d)", n))
+			n, warns := estimateSPFLookups(ctx, resolver, spf, map[string]bool{})
+			if n > maxLookups {
+				maxLookups = n
+			}
+			for _, warn := range warns {
+				add(&report, "warn", "spf", warn)
+			}
+			if n > 10 {
+				add(&report, "warn", "spf", fmt.Sprintf("SPF record may exceed 10 DNS lookups after include/redirect expansion (%d)", n))
 			}
 		}
+		report.SPFEffectiveLookups = maxLookups
 	}
 
 	dmarcName := "_dmarc." + strings.TrimSuffix(domain, ".")
-	dmarcRes, dmarcErr := dnsquery.Query(ctx, resolver, dmarcName, "TXT")
+	dmarcRes, dmarcErr := query(ctx, resolver, dmarcName, "TXT")
 	if dmarcErr != nil {
 		add(&report, "warn", "dmarc", dmarcErr.Error())
 	} else {
@@ -77,10 +90,23 @@ func Run(ctx context.Context, resolver, domain string, selectors []string) Repor
 		}
 	}
 
+	mtaSTSName := "_mta-sts." + strings.TrimSuffix(domain, ".")
+	mtaSTSRes, mtaSTSErr := query(ctx, resolver, mtaSTSName, "TXT")
+	if mtaSTSErr != nil {
+		add(&report, "warn", "mta-sts", mtaSTSErr.Error())
+	} else {
+		report.MTASTS = matchingTXT(mtaSTSRes.Values, "v=STSv1")
+		if len(report.MTASTS) == 0 {
+			add(&report, "warn", "mta-sts", "no MTA-STS TXT record found")
+		} else if !hostHasAddress(ctx, resolver, "mta-sts."+strings.TrimSuffix(domain, ".")) {
+			add(&report, "warn", "mta-sts", "mta-sts policy host has no A/AAAA answer")
+		}
+	}
+
 	for _, sel := range selectors {
 		name := fmt.Sprintf("%s._domainkey.%s", sel, strings.TrimSuffix(domain, "."))
 		row := DKIMRow{Selector: sel}
-		res, err := dnsquery.Query(ctx, resolver, name, "TXT")
+		res, err := query(ctx, resolver, name, "TXT")
 		if err != nil {
 			row.Error = err.Error()
 			add(&report, "warn", "dkim", fmt.Sprintf("selector %s: %v", sel, err))
@@ -137,6 +163,76 @@ func countSPFLookups(spf string) int {
 	return n
 }
 
+func estimateSPFLookups(ctx context.Context, resolver, spf string, seen map[string]bool) (int, []string) {
+	count := countSPFLookups(spf)
+	var warns []string
+	for _, include := range spfIncludeTargets(spf) {
+		key := "include:" + strings.ToLower(include)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		res, err := query(ctx, resolver, include, "TXT")
+		if err != nil {
+			warns = append(warns, fmt.Sprintf("SPF include %s lookup failed: %v", include, err))
+			continue
+		}
+		child := matchingTXT(res.Values, "v=spf1")
+		if len(child) == 0 {
+			warns = append(warns, fmt.Sprintf("SPF include %s returned no SPF record", include))
+			continue
+		}
+		n, childWarns := estimateSPFLookups(ctx, resolver, child[0], seen)
+		count += n
+		warns = append(warns, childWarns...)
+	}
+	if redirect := spfRedirectTarget(spf); redirect != "" {
+		key := "redirect:" + strings.ToLower(redirect)
+		if !seen[key] {
+			seen[key] = true
+			res, err := query(ctx, resolver, redirect, "TXT")
+			if err != nil {
+				warns = append(warns, fmt.Sprintf("SPF redirect %s lookup failed: %v", redirect, err))
+			} else {
+				child := matchingTXT(res.Values, "v=spf1")
+				if len(child) == 0 {
+					warns = append(warns, fmt.Sprintf("SPF redirect %s returned no SPF record", redirect))
+				} else {
+					n, childWarns := estimateSPFLookups(ctx, resolver, child[0], seen)
+					count += n
+					warns = append(warns, childWarns...)
+				}
+			}
+		}
+	}
+	return count, warns
+}
+
+func spfIncludeTargets(spf string) []string {
+	var out []string
+	for _, field := range strings.Fields(strings.ToLower(spf)) {
+		if strings.HasPrefix(field, "include:") {
+			target := strings.TrimSpace(strings.TrimPrefix(field, "include:"))
+			if target != "" {
+				out = append(out, target)
+			}
+		}
+	}
+	return out
+}
+
+func spfRedirectTarget(spf string) string {
+	for _, field := range strings.Fields(strings.ToLower(spf)) {
+		if strings.HasPrefix(field, "redirect=") {
+			target := strings.TrimSpace(strings.TrimPrefix(field, "redirect="))
+			if target != "" {
+				return target
+			}
+		}
+	}
+	return ""
+}
+
 func mxHost(mx string) string {
 	parts := strings.Fields(mx)
 	if len(parts) != 2 {
@@ -146,10 +242,10 @@ func mxHost(mx string) string {
 }
 
 func hostHasAddress(ctx context.Context, resolver, host string) bool {
-	if res, err := dnsquery.Query(ctx, resolver, host, "A"); err == nil && len(res.Values) > 0 {
+	if res, err := query(ctx, resolver, host, "A"); err == nil && len(res.Values) > 0 {
 		return true
 	}
-	if res, err := dnsquery.Query(ctx, resolver, host, "AAAA"); err == nil && len(res.Values) > 0 {
+	if res, err := query(ctx, resolver, host, "AAAA"); err == nil && len(res.Values) > 0 {
 		return true
 	}
 	return false

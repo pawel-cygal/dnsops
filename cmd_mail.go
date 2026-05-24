@@ -109,12 +109,22 @@ func renderMail(report mailcheck.Report) {
 		for _, spf := range report.SPF {
 			fmt.Printf("  %s\n", spf)
 		}
+		if report.SPFEffectiveLookups > 0 {
+			fmt.Printf("  effective lookups: %d\n", report.SPFEffectiveLookups)
+		}
 		fmt.Println()
 	}
 	if len(report.DMARC) > 0 {
 		fmt.Println("DMARC:")
 		for _, d := range report.DMARC {
 			fmt.Printf("  %s\n", d)
+		}
+		fmt.Println()
+	}
+	if len(report.MTASTS) > 0 {
+		fmt.Println("MTA-STS:")
+		for _, row := range report.MTASTS {
+			fmt.Printf("  %s\n", row)
 		}
 		fmt.Println()
 	}

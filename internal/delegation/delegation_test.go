@@ -1,9 +1,12 @@
 package delegation
 
 import (
+	"context"
+	"fmt"
 	"reflect"
 	"testing"
 
+	"dnsops/internal/dnsquery"
 	"dnsops/internal/rawdns"
 )
 
@@ -101,5 +104,51 @@ func TestPossibleLame(t *testing.T) {
 	}
 	if possibleLame([]NSCheck{{PossibleLame: false}}) {
 		t.Fatal("expected possible lame=false")
+	}
+}
+
+func TestNameserverAddressErrors(t *testing.T) {
+	oldQuery := dnsqueryQuery
+	defer func() { dnsqueryQuery = oldQuery }()
+
+	dnsqueryQuery = func(ctx context.Context, resolver, name, rrType string) (dnsquery.Result, error) {
+		switch rrType {
+		case "A":
+			return dnsquery.Result{}, nil
+		case "AAAA":
+			return dnsquery.Result{}, nil
+		default:
+			return dnsquery.Result{}, fmt.Errorf("unexpected type %s", rrType)
+		}
+	}
+	errs := nameserverAddressErrors(context.Background(), "1.1.1.1:53", "ns1.example.com")
+	if len(errs) != 1 || errs[0] != "no A/AAAA address records found for nameserver" {
+		t.Fatalf("nameserverAddressErrors() = %v", errs)
+	}
+
+	dnsqueryQuery = func(ctx context.Context, resolver, name, rrType string) (dnsquery.Result, error) {
+		if rrType == "A" {
+			return dnsquery.Result{}, fmt.Errorf("timeout")
+		}
+		return dnsquery.Result{Values: []string{"2001:db8::53"}}, nil
+	}
+	errs = nameserverAddressErrors(context.Background(), "1.1.1.1:53", "ns1.example.com")
+	if len(errs) != 1 || errs[0] != "A lookup failed: timeout" {
+		t.Fatalf("nameserverAddressErrors() partial failure = %v", errs)
+	}
+}
+
+func TestAddressReachabilityBroken(t *testing.T) {
+	if addressReachabilityBroken(nil) {
+		t.Fatal("nil errors should not mean broken reachability")
+	}
+	if addressReachabilityBroken([]string{"A lookup failed: timeout"}) {
+		t.Fatal("single-family failure should not mean broken reachability")
+	}
+	if !addressReachabilityBroken([]string{"A lookup failed: timeout", "AAAA lookup failed: timeout"}) {
+		t.Fatal("both family failures should mean broken reachability")
+	}
+	if !addressReachabilityBroken([]string{"no A/AAAA address records found for nameserver"}) {
+		t.Fatal("missing both address families should mean broken reachability")
 	}
 }

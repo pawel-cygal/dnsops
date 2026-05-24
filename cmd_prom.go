@@ -88,10 +88,14 @@ func printDNSSECProm(reports []dnssec.Report) {
 	fmt.Println("# TYPE dnsops_dnssec_status gauge")
 	fmt.Println("# HELP dnsops_dnssec_child_dnskey_count Number of child DNSKEY records.")
 	fmt.Println("# TYPE dnsops_dnssec_child_dnskey_count gauge")
+	fmt.Println("# HELP dnsops_dnssec_child_ksk_count Number of child KSK records.")
+	fmt.Println("# TYPE dnsops_dnssec_child_ksk_count gauge")
 	fmt.Println("# HELP dnsops_dnssec_child_rrsig_count Number of child DNSKEY-covering RRSIG records.")
 	fmt.Println("# TYPE dnsops_dnssec_child_rrsig_count gauge")
 	fmt.Println("# HELP dnsops_dnssec_parent_ds_count Number of parent DS records.")
 	fmt.Println("# TYPE dnsops_dnssec_parent_ds_count gauge")
+	fmt.Println("# HELP dnsops_dnssec_matching_ds_count Number of parent DS records matching child DNSKEYs.")
+	fmt.Println("# TYPE dnsops_dnssec_matching_ds_count gauge")
 	for _, report := range reports {
 		for _, status := range []string{"signed", "unsigned", "broken", "error"} {
 			value := 0
@@ -108,8 +112,10 @@ func printDNSSECProm(reports []dnssec.Report) {
 			"resolver": report.Resolver,
 		}
 		fmt.Printf("dnsops_dnssec_child_dnskey_count{%s} %d\n", promLabels(labels), report.ChildDNSKEYCount)
+		fmt.Printf("dnsops_dnssec_child_ksk_count{%s} %d\n", promLabels(labels), report.ChildKSKCount)
 		fmt.Printf("dnsops_dnssec_child_rrsig_count{%s} %d\n", promLabels(labels), report.ChildRRSIGCount)
 		fmt.Printf("dnsops_dnssec_parent_ds_count{%s} %d\n", promLabels(labels), report.ParentDSCount)
+		fmt.Printf("dnsops_dnssec_matching_ds_count{%s} %d\n", promLabels(labels), report.MatchingDSCount)
 	}
 }
 
@@ -122,6 +128,8 @@ func printMailProm(reports []mailcheck.Report) {
 	fmt.Println("# TYPE dnsops_mail_status gauge")
 	fmt.Println("# HELP dnsops_mail_record_present Presence of key mail DNS records (1=present, 0=missing).")
 	fmt.Println("# TYPE dnsops_mail_record_present gauge")
+	fmt.Println("# HELP dnsops_mail_spf_effective_lookups Estimated SPF lookup count after include/redirect expansion.")
+	fmt.Println("# TYPE dnsops_mail_spf_effective_lookups gauge")
 	fmt.Println("# HELP dnsops_mail_dkim_selector_ok DKIM selector presence/health (1=ok, 0=missing or error).")
 	fmt.Println("# TYPE dnsops_mail_dkim_selector_ok gauge")
 	for _, report := range reports {
@@ -165,6 +173,12 @@ func printMailProm(reports []mailcheck.Report) {
 			"resolver": report.Resolver,
 			"record":   "dmarc",
 		}), boolToFloat(len(report.DMARC) > 0))
+		fmt.Printf("dnsops_mail_record_present{%s} %d\n", promLabels(map[string]string{
+			"domain":   report.Domain,
+			"resolver": report.Resolver,
+			"record":   "mta-sts",
+		}), boolToFloat(len(report.MTASTS) > 0))
+		fmt.Printf("dnsops_mail_spf_effective_lookups{%s} %d\n", promLabels(base), report.SPFEffectiveLookups)
 
 		for _, row := range report.DKIM {
 			fmt.Printf("dnsops_mail_dkim_selector_ok{%s} %d\n", promLabels(map[string]string{

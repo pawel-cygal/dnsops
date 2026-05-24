@@ -80,8 +80,10 @@ func cmdDNSSEC(args []string) {
 		}
 		fmt.Printf("status: %s\n", report.Status)
 		fmt.Printf("child DNSKEY count: %d\n", report.ChildDNSKEYCount)
+		fmt.Printf("child KSK count: %d\n", report.ChildKSKCount)
 		fmt.Printf("child DNSKEY RRSIG count: %d\n", report.ChildRRSIGCount)
 		fmt.Printf("parent DS count: %d\n", report.ParentDSCount)
+		fmt.Printf("matching DS count: %d\n", report.MatchingDSCount)
 		if len(report.Findings) > 0 {
 			fmt.Println("\nfindings:")
 			for _, finding := range report.Findings {

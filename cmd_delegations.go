@@ -83,6 +83,9 @@ func cmdDelegations(args []string) {
 					fmt.Printf("  %-24s  glue   %s\n", "", strings.Join(c.Glue, ", "))
 				}
 			}
+			for _, reason := range c.LameReasons {
+				fmt.Printf("  %-24s  hint   %s\n", "", reason)
+			}
 			continue
 		}
 		fmt.Printf("  %-24s  ns=%s", line, strings.Join(c.NS, ", "))
@@ -99,6 +102,9 @@ func cmdDelegations(args []string) {
 		}
 		if c.PossibleLame {
 			fmt.Printf("  %-24s  hint=possible lame delegation\n", "")
+			for _, reason := range c.LameReasons {
+				fmt.Printf("  %-24s  hint=%s\n", "", reason)
+			}
 		}
 	}
 	fmt.Printf("\nsummary: parent_matches_child=%v  child_ns_consistent=%v  soa_serial_consistent=%v  glue_consistent=%v  possible_lame=%v\n",

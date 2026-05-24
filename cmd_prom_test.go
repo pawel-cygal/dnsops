@@ -108,15 +108,19 @@ func TestPrintDNSSECProm(t *testing.T) {
 				Resolver:         "1.1.1.1:53",
 				Status:           "signed",
 				ChildDNSKEYCount: 2,
+				ChildKSKCount:    1,
 				ChildRRSIGCount:  1,
 				ParentDSCount:    1,
+				MatchingDSCount:  1,
 			},
 		})
 	})
 	for _, want := range []string{
 		"dnsops_dnssec_status{domain=\"example.com\",status=\"signed\"} 1",
 		"dnsops_dnssec_child_dnskey_count{domain=\"example.com\",resolver=\"1.1.1.1:53\"} 2",
+		"dnsops_dnssec_child_ksk_count{domain=\"example.com\",resolver=\"1.1.1.1:53\"} 1",
 		"dnsops_dnssec_parent_ds_count{domain=\"example.com\",resolver=\"1.1.1.1:53\"} 1",
+		"dnsops_dnssec_matching_ds_count{domain=\"example.com\",resolver=\"1.1.1.1:53\"} 1",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("dnssec prom output missing %q:\n%s", want, out)
@@ -128,11 +132,13 @@ func TestPrintMailProm(t *testing.T) {
 	out := captureStdout(t, func() {
 		printMailProm([]mailcheck.Report{
 			{
-				Domain:   "example.com",
-				Resolver: "1.1.1.1:53",
-				MX:       []string{"10 mx.example.com."},
-				SPF:      []string{"v=spf1 -all"},
-				DMARC:    []string{"v=DMARC1; p=reject"},
+				Domain:              "example.com",
+				Resolver:            "1.1.1.1:53",
+				MX:                  []string{"10 mx.example.com."},
+				SPF:                 []string{"v=spf1 -all"},
+				SPFEffectiveLookups: 3,
+				DMARC:               []string{"v=DMARC1; p=reject"},
+				MTASTS:              []string{"v=STSv1; id=20260524"},
 				DKIM: []mailcheck.DKIMRow{
 					{Selector: "default", Values: []string{"v=DKIM1; p=abc"}},
 					{Selector: "google", Error: "NXDOMAIN"},
@@ -145,6 +151,8 @@ func TestPrintMailProm(t *testing.T) {
 		"dnsops_mail_warnings{domain=\"example.com\",resolver=\"1.1.1.1:53\"} 1",
 		"dnsops_mail_status{domain=\"example.com\",resolver=\"1.1.1.1:53\",status=\"warn\"} 1",
 		"dnsops_mail_record_present{domain=\"example.com\",record=\"mx\",resolver=\"1.1.1.1:53\"} 1",
+		"dnsops_mail_record_present{domain=\"example.com\",record=\"mta-sts\",resolver=\"1.1.1.1:53\"} 1",
+		"dnsops_mail_spf_effective_lookups{domain=\"example.com\",resolver=\"1.1.1.1:53\"} 3",
 		"dnsops_mail_dkim_selector_ok{domain=\"example.com\",resolver=\"1.1.1.1:53\",selector=\"default\"} 1",
 		"dnsops_mail_dkim_selector_ok{domain=\"example.com\",resolver=\"1.1.1.1:53\",selector=\"google\"} 0",
 	} {

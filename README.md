@@ -176,7 +176,11 @@ Current scope:
 - checks whether child nameservers agree with each other
 - checks SOA serial consistency across child nameservers
 - checks whether in-bailiwick child nameservers appear to have parent-side glue
-- emits basic possible-lame hints when delegated nameservers fail zone NS/SOA checks
+- emits stronger possible-lame hints when delegated nameservers:
+  - fail zone NS checks
+  - fail SOA checks
+  - have no visible A/AAAA records
+  - or lack required parent-side glue
 
 Semantics:
 - `parent delegation` means what the parent zone delegates to the child
@@ -250,8 +254,9 @@ Notes:
 
 Current scope:
 - MX presence
-- SPF presence + rough DNS-lookup count heuristic
+- SPF presence + deeper include/redirect lookup estimate
 - DMARC presence
+- MTA-STS TXT presence + basic policy-host reachability
 - optional DKIM selector presence via repeated `--selector`
 - supports multiple positional domains or `--input`
 - supports `--yaml` and Prometheus text output via `--prom`
@@ -263,6 +268,10 @@ Typical use:
 dnsops mail example.com --selector default --selector google
 dnsops mail --input domains.txt --prom
 ```
+
+Notes:
+- SPF lookup counting now follows `include:` and `redirect=` recursively to produce a more realistic lookup estimate
+- MTA-STS is currently checked at the DNS/TXT level plus basic `mta-sts.<domain>` address reachability
 
 ### `verify`
 
@@ -339,7 +348,9 @@ Notes:
 
 Current scope:
 - checks whether the child publishes `DNSKEY`
+- distinguishes total child `DNSKEY` count from KSK count
 - checks whether the parent publishes `DS`
+- checks whether at least one parent `DS` actually matches a child `DNSKEY`
 - checks whether the `DNSKEY` RRset is signed with `RRSIG`
 - supports multiple positional domains or `--input`
 - supports `--yaml` in addition to `--json`
@@ -351,6 +362,11 @@ Current scope:
 
 Notes:
 - this is a practical DNSSEC status checker, not yet a full chain validator
+- `signed` now means:
+  - child `DNSKEY` exists
+  - parent `DS` exists
+  - the `DNSKEY` RRset has `RRSIG`
+  - at least one parent `DS` matches a child `DNSKEY`
 - parent-zone discovery is still suffix-based and does not use the Public Suffix List
 - complex public-suffix cases may therefore require manual judgment
 
