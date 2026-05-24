@@ -3,7 +3,10 @@ package propagation
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
+	"sort"
+	"strings"
 	"sync"
 
 	"dnsops/internal/dnsquery"
@@ -16,21 +19,65 @@ var DefaultResolvers = []string{
 	"208.67.222.222:53",
 }
 
+var regionalProfiles = map[string][]string{
+	"default": DefaultResolvers,
+	"eu": {
+		"9.9.9.9:53",
+		"149.112.112.112:53",
+		"94.140.14.14:53",
+		"94.140.15.15:53",
+		"1.1.1.1:53",
+		"8.8.8.8:53",
+	},
+	"us": {
+		"1.1.1.1:53",
+		"1.0.0.1:53",
+		"8.8.8.8:53",
+		"8.8.4.4:53",
+		"208.67.222.222:53",
+		"208.67.220.220:53",
+	},
+	"asia": {
+		"1.1.1.1:53",
+		"1.0.0.1:53",
+		"8.8.8.8:53",
+		"8.8.4.4:53",
+		"9.9.9.9:53",
+		"94.140.14.14:53",
+	},
+	"oceania": {
+		"1.1.1.1:53",
+		"1.0.0.1:53",
+		"8.8.8.8:53",
+		"208.67.222.222:53",
+		"9.9.9.9:53",
+	},
+	"south-america": {
+		"1.1.1.1:53",
+		"8.8.8.8:53",
+		"9.9.9.9:53",
+		"208.67.222.222:53",
+		"94.140.14.14:53",
+	},
+}
+
+var globalProfileOrder = []string{"default", "eu", "us", "asia", "oceania", "south-america"}
+
 type ResolverResult struct {
-	Resolver string   `json:"resolver"`
-	Values   []string `json:"values,omitempty"`
-	Error    string   `json:"error,omitempty"`
-	Matches  bool     `json:"matches"`
+	Resolver string   `json:"resolver" yaml:"resolver"`
+	Values   []string `json:"values,omitempty" yaml:"values,omitempty"`
+	Error    string   `json:"error,omitempty" yaml:"error,omitempty"`
+	Matches  bool     `json:"matches" yaml:"matches"`
 }
 
 type Report struct {
-	Name        string           `json:"name"`
-	Type        string           `json:"type"`
-	Expected    []string         `json:"expected"`
-	HasMajority bool             `json:"has_majority"`
-	Resolvers   []ResolverResult `json:"resolvers"`
-	Healthy     int              `json:"healthy"`
-	Total       int              `json:"total"`
+	Name        string           `json:"name" yaml:"name"`
+	Type        string           `json:"type" yaml:"type"`
+	Expected    []string         `json:"expected" yaml:"expected"`
+	HasMajority bool             `json:"has_majority" yaml:"has_majority"`
+	Resolvers   []ResolverResult `json:"resolvers" yaml:"resolvers"`
+	Healthy     int              `json:"healthy" yaml:"healthy"`
+	Total       int              `json:"total" yaml:"total"`
 }
 
 func Run(ctx context.Context, resolvers []string, name, rrType string) Report {
@@ -93,8 +140,7 @@ func majorityValues(results []ResolverResult) ([]string, bool) {
 			}
 		}
 		if !found {
-			copied := make([]string, len(r.Values))
-			copy(copied, r.Values)
+			copied := append([]string(nil), r.Values...)
 			buckets = append(buckets, bucket{values: copied, count: 1})
 		}
 	}
@@ -117,4 +163,49 @@ func FirstError(report Report) error {
 		}
 	}
 	return nil
+}
+
+func AvailableProfiles() []string {
+	out := append([]string(nil), globalProfileOrder...)
+	out = append(out, "global")
+	sort.Strings(out)
+	return out
+}
+
+func ResolversForProfiles(profiles []string) ([]string, error) {
+	if len(profiles) == 0 {
+		return append([]string(nil), DefaultResolvers...), nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	add := func(list []string) {
+		for _, resolver := range list {
+			resolver = dnsquery.NormalizeResolver(resolver)
+			if !seen[resolver] {
+				seen[resolver] = true
+				out = append(out, resolver)
+			}
+		}
+	}
+	for _, profile := range profiles {
+		profile = normalizeProfile(profile)
+		if profile == "global" {
+			for _, name := range globalProfileOrder {
+				add(regionalProfiles[name])
+			}
+			continue
+		}
+		list, ok := regionalProfiles[profile]
+		if !ok {
+			return nil, fmt.Errorf("unknown resolver profile %q (available: %s)", profile, strings.Join(AvailableProfiles(), ", "))
+		}
+		add(list)
+	}
+	return out, nil
+}
+
+func normalizeProfile(name string) string {
+	name = strings.TrimSpace(strings.ToLower(name))
+	name = strings.ReplaceAll(name, "_", "-")
+	return strings.ReplaceAll(name, " ", "-")
 }

@@ -10,19 +10,26 @@ import (
 )
 
 func cmdVerify(args []string) {
-	args = normalizeFlagArgs(args, map[string]bool{"-f": true, "--resolver": true, "--interval": true})
+	args = normalizeFlagArgs(args, map[string]bool{"-f": true, "--resolver": true, "--interval": true, "--timeout": true, "--max-iterations": true})
 	fs := flag.NewFlagSet("verify", flag.ExitOnError)
 	file := fs.String("f", "", "path to dns spec YAML")
 	resolver := fs.String("resolver", "1.1.1.1:53", "DNS resolver to query")
 	jsonOut := fs.Bool("json", false, "emit JSON")
+	yamlOut := fs.Bool("yaml", false, "emit YAML")
 	watch := fs.Bool("watch", false, "rerun the check until interrupted")
 	interval := fs.Duration("interval", 5*time.Second, "watch interval")
+	timeout := fs.Duration("timeout", 0, "maximum watch duration (0 = unlimited)")
+	maxIterations := fs.Int("max-iterations", 0, "maximum watch iterations (0 = unlimited)")
 	untilOK := fs.Bool("until-ok", false, "in watch mode, stop automatically once the check is healthy")
 	_ = fs.Parse(args)
 	if *file == "" {
-		fatal("usage: dnsops verify -f dns.yaml [--resolver IP:PORT] [--json] [--watch] [--interval 5s] [--until-ok]")
+		fatal("usage: dnsops verify -f dns.yaml [--resolver IP:PORT] [--json|--yaml] [--watch] [--interval 5s] [--timeout 1m] [--max-iterations 60] [--until-ok]")
 	}
-	watchCfg, err := normalizeWatchConfig(*watch, *untilOK, *interval)
+	watchCfg, err := normalizeWatchConfig(*watch, *untilOK, *interval, *timeout, *maxIterations)
+	if err != nil {
+		fatal(err.Error())
+	}
+	format, err := resolveOutputFormat(*jsonOut, *yamlOut)
 	if err != nil {
 		fatal(err.Error())
 	}
@@ -36,7 +43,7 @@ func cmdVerify(args []string) {
 		return verify.Run(ctx, *resolver, *file, spec), nil
 	}
 	if watchCfg.Enabled {
-		err := watchLoop(watchCfg, fmt.Sprintf("verify %s", *file), *jsonOut, func() (watchIteration, error) {
+		err := watchLoopFormat(watchCfg, fmt.Sprintf("verify %s", *file), format, func() (watchIteration, error) {
 			report, err := runOnce()
 			if err != nil {
 				return watchIteration{}, err
@@ -49,17 +56,22 @@ func cmdVerify(args []string) {
 				},
 			}, nil
 		})
-		if err != nil {
-			fatal(err.Error())
-		}
+		handleWatchError(err)
 		return
 	}
 	report, err := runOnce()
 	if err != nil {
 		fatal(err.Error())
 	}
-	if *jsonOut {
+	switch format {
+	case outputJSON:
 		printJSON(report)
+		if report.Errors > 0 {
+			exitCode(1)
+		}
+		return
+	case outputYAML:
+		printYAML(report)
 		if report.Errors > 0 {
 			exitCode(1)
 		}

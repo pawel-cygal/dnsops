@@ -41,13 +41,13 @@ func usage() {
 	fmt.Fprintf(os.Stderr, `dnsops - DNS operations CLI
 
 Usage:
-  dnsops lookup <name> <type> [--resolver IP:PORT] [--json]
+  dnsops lookup <name> <type> [--resolver IP:PORT] [--json|--yaml] [--ttl] [--watch] [--interval 5s] [--timeout 1m] [--max-iterations 60]
   dnsops soa <zone> [--resolver IP:PORT] [--json]
   dnsops delegations <zone> [--resolver IP:PORT] [--json]
-  dnsops propagate <name> <type> [--resolvers ip:53,ip:53] [--json] [--watch] [--interval 5s] [--until-ok]
-  dnsops compare <name> <type> [--baseline ip:53] [--resolvers ip:53,ip:53] [--authoritative] [--json] [--watch] [--interval 5s] [--until-ok]
+  dnsops propagate <name> <type> [--profile global] [--profile eu] [--resolvers ip:53,ip:53] [--json|--yaml] [--watch] [--interval 5s] [--timeout 1m] [--max-iterations 60] [--until-ok]
+  dnsops compare <name> <type> [--baseline ip:53] [--profile global] [--profile eu] [--resolvers ip:53,ip:53] [--authoritative] [--json|--yaml] [--watch] [--interval 5s] [--timeout 1m] [--max-iterations 60] [--until-ok]
   dnsops mail <domain> [--resolver IP:PORT] [--selector default] [--json]
-  dnsops verify -f dns.yaml [--resolver IP:PORT] [--json] [--watch] [--interval 5s] [--until-ok]
+  dnsops verify -f dns.yaml [--resolver IP:PORT] [--json|--yaml] [--watch] [--interval 5s] [--timeout 1m] [--max-iterations 60] [--until-ok]
   dnsops expiry <domain> [domain...] [--warn-days 60] [--critical-days 14] [--json]
   dnsops dnssec <domain> [--resolver IP:PORT] [--json]
 

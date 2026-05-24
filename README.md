@@ -34,6 +34,7 @@ Examples:
 ```bash
 dnsops lookup app.example.com A
 dnsops lookup app.example.com A --ttl
+dnsops lookup app.example.com A --ttl --watch --interval 1s
 dnsops lookup example.com MX --resolver 1.1.1.1:53
 dnsops lookup _dmarc.example.com TXT --json
 
@@ -42,6 +43,8 @@ dnsops delegations example.com
 
 dnsops propagate app.example.com A
 dnsops propagate app.example.com A --watch --until-ok
+dnsops propagate app.example.com A --until-ok --timeout 2m
+dnsops propagate app.example.com A --profile eu --profile us
 dnsops compare app.example.com A --baseline 1.1.1.1:53 --resolvers 8.8.8.8:53,9.9.9.9:53
 dnsops compare app.example.com A --authoritative
 dnsops compare app.example.com A --authoritative --watch --interval 2s
@@ -49,6 +52,7 @@ dnsops compare app.example.com A --authoritative --watch --interval 2s
 dnsops mail example.com --selector default --selector google
 dnsops verify -f dns.yaml
 dnsops verify -f dns.yaml --watch
+dnsops verify -f dns.yaml --yaml
 dnsops expiry example.com example.org
 dnsops dnssec example.com
 ```
@@ -62,12 +66,14 @@ Flags may be placed after positional arguments in the examples above; the CLI no
 Current scope:
 - supported types: `A`, `AAAA`, `CNAME`, `MX`, `NS`, `TXT`
 - optional custom resolver via `--resolver`
-- plain text or `--json`
+- plain text, `--json`, or `--yaml`
 - `--ttl` switches to raw DNS answers with TTLs for the same supported record types
+- `--watch` and `--interval` work for both normal and TTL-aware lookups
 
 Notes:
 - `lookup` deliberately does not expose `SOA`; use `dnsops soa <zone>` for that
 - `--ttl` uses raw DNS queries and returns answer records with TTLs
+- `lookup --ttl --watch --interval 1s` is the best fit when you want to watch TTLs converge in near real time without manually rerunning the command
 
 ### `soa`
 
@@ -108,9 +114,19 @@ Limitations:
 
 Current scope:
 - checks a small built-in resolver set by default
+- resolver profiles via repeatable `--profile`
+  - `default`
+  - `global`
+  - `eu`
+  - `us`
+  - `asia`
+  - `oceania`
+  - `south-america`
 - optional `--resolvers ip:53,ip:53`
 - treats the majority answer as the current expected value only when a real majority exists
 - supports `--watch`, `--interval`, and `--until-ok`
+- supports `--timeout` and `--max-iterations` to stop long-running watches predictably
+- supports `--yaml` in addition to `--json`
 - exits non-zero if any resolver disagrees or errors
 
 Good fit for:
@@ -120,15 +136,22 @@ Good fit for:
 Note:
 - if resolvers split evenly, the command reports `no majority answer` instead of pretending one side is authoritative
 - `--until-ok` implies watch mode
+- `--timeout` and `--max-iterations` are useful safety rails for long DNS rollouts
+- repeated `--profile` flags are merged, deduplicated, and used as a union
+- `global` means the union of all built-in profiles
+- `--resolvers` overrides profiles and the default set
+- profiles are curated public-resolver buckets, not true multi-region vantage points; from one machine, anycast routing still means you are not literally querying "from Asia" or "from the US"
 
 ### `compare`
 
 Current scope:
 - baseline resolver via `--baseline`
-- compare set via `--resolvers` or the built-in public resolver set
+- compare set via `--resolvers`, repeatable `--profile`, or the built-in public resolver set
 - exits non-zero if any resolver differs from the baseline or errors
 - `--authoritative` discovers the zone NS set and compares recursive answers against authoritative answers
 - supports `--watch`, `--interval`, and `--until-ok`
+- supports `--timeout` and `--max-iterations`
+- supports `--yaml` in addition to `--json`
 
 Notes:
 - `--authoritative` is the preferred mode when you want to answer:
@@ -137,6 +160,9 @@ Notes:
 - the expected answer is derived from the authoritative set, not blindly from the first successful nameserver response
 - zone discovery is still suffix-based and does not use the Public Suffix List, so complex public-suffix cases may require manual judgment
 - `--until-ok` implies watch mode
+- repeated `--profile` flags are merged and deduplicated
+- `global` means the union of all built-in profiles
+- `--resolvers` overrides profiles and the default set
 
 ### `mail`
 
@@ -163,7 +189,9 @@ Current scope:
 - `must_exist` / `must_not_exist`
 - `min_ttl` / `max_ttl`
 - resolver-based verification with text or JSON output
+- optional YAML output via `--yaml`
 - supports `--watch`, `--interval`, and `--until-ok`
+- supports `--timeout` and `--max-iterations`
 
 Important semantic detail:
 - every `contains:` fragment must match within the same returned record
@@ -242,9 +270,14 @@ The tool currently supports:
 
 Watch mode:
 - `propagate`, `compare`, and `verify` support `--watch`
+- `lookup` also supports `--watch`, which is especially useful with `--ttl`
 - `--interval` controls polling interval (default `5s`)
 - `--until-ok` stops automatically once the check becomes healthy
+- `--timeout` caps total watch duration
+- `--max-iterations` caps total watch iterations
 - with `--json --watch`, output is newline-delimited JSON (one object per iteration)
+- with `--yaml --watch`, output is newline-delimited YAML documents
+- on an interactive terminal, raw watch mode redraws the same screen instead of appending snapshots, so live propagation checks feel closer to a dashboard than a scrolling log
 
 Exit codes are intended to be CI-friendly:
 - `0` for healthy / matching / successful checks
