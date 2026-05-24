@@ -90,8 +90,26 @@ func renderVerify(report verify.Report) {
 		if len(r.Contains) > 0 {
 			fmt.Printf("  contains: %v\n", r.Contains)
 		}
+		if r.Regex != "" {
+			fmt.Printf("  regex:    %s\n", r.Regex)
+		}
+		if r.MustExist {
+			fmt.Printf("  must_exist: true\n")
+		}
+		if r.MustNotExist {
+			fmt.Printf("  must_not_exist: true\n")
+		}
+		if r.MinTTL > 0 {
+			fmt.Printf("  min_ttl:  %d\n", r.MinTTL)
+		}
+		if r.MaxTTL > 0 {
+			fmt.Printf("  max_ttl:  %d\n", r.MaxTTL)
+		}
 		if len(r.Actual) > 0 {
 			fmt.Printf("  actual:   %v\n", r.Actual)
+		}
+		if len(r.ActualTTLs) > 0 {
+			fmt.Printf("  ttl:      %v\n", r.ActualTTLs)
 		}
 		if r.Error != "" {
 			fmt.Printf("  error:    %s\n", r.Error)

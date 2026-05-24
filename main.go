@@ -28,6 +28,8 @@ func main() {
 		cmdVerify(os.Args[2:])
 	case "expiry":
 		cmdExpiry(os.Args[2:])
+	case "dnssec":
+		cmdDNSSEC(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -47,6 +49,7 @@ Usage:
   dnsops mail <domain> [--resolver IP:PORT] [--selector default] [--json]
   dnsops verify -f dns.yaml [--resolver IP:PORT] [--json] [--watch] [--interval 5s] [--until-ok]
   dnsops expiry <domain> [domain...] [--warn-days 60] [--critical-days 14] [--json]
+  dnsops dnssec <domain> [--resolver IP:PORT] [--json]
 
 `)
 }

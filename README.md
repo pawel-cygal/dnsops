@@ -15,6 +15,7 @@ Implemented commands:
 - `mail`
 - `verify`
 - `expiry`
+- `dnssec`
 
 The current tool is already beyond the original MVP sketch:
 - basic record lookups
@@ -24,6 +25,7 @@ The current tool is already beyond the original MVP sketch:
 - expected-state verification from YAML
 - SOA and delegation diagnostics
 - domain expiry via RDAP
+- DNSSEC status checks
 
 ## Commands
 
@@ -48,6 +50,7 @@ dnsops mail example.com --selector default --selector google
 dnsops verify -f dns.yaml
 dnsops verify -f dns.yaml --watch
 dnsops expiry example.com example.org
+dnsops dnssec example.com
 ```
 
 Flags may be placed after positional arguments in the examples above; the CLI normalizes them before parsing.
@@ -156,6 +159,9 @@ Current scope:
 - YAML file with `checks:`
 - exact `values:` match
 - substring-based `contains:` match
+- regex-based `regex:` match
+- `must_exist` / `must_not_exist`
+- `min_ttl` / `max_ttl`
 - resolver-based verification with text or JSON output
 - supports `--watch`, `--interval`, and `--until-ok`
 
@@ -180,6 +186,19 @@ checks:
     contains:
       - v=DMARC1
       - p=reject
+
+  - name: old.example.com
+    type: CNAME
+    must_not_exist: true
+
+  - name: example.com
+    type: MX
+    must_exist: true
+    min_ttl: 300
+
+  - name: example.com
+    type: TXT
+    regex: '^v=spf1 .* -all$'
 ```
 
 ### `expiry`
@@ -198,6 +217,22 @@ Notes:
 - text output shows lookup failures directly
 - JSON output preserves the failure reason in the `error` field
 - RDAP currently goes through `rdap.org`, so gateway-level outages or rate-limits can affect this command even when the domain itself is fine
+
+### `dnssec`
+
+Current scope:
+- checks whether the child publishes `DNSKEY`
+- checks whether the parent publishes `DS`
+- checks whether the `DNSKEY` RRset is signed with `RRSIG`
+- classifies the result as:
+  - `signed`
+  - `unsigned`
+  - `broken`
+
+Notes:
+- this is a practical DNSSEC status checker, not yet a full chain validator
+- parent-zone discovery is still suffix-based and does not use the Public Suffix List
+- complex public-suffix cases may therefore require manual judgment
 
 ## Output model
 
@@ -228,7 +263,6 @@ That split keeps the common paths simple while allowing deeper diagnostics where
 ## Non-goals for now
 
 Not implemented yet:
-- DNSSEC validation
 - richer delegation diagnostics such as glue/lame-delegation analysis
 - advanced `verify` policies like TTL thresholds or `must_not_exist`
 - provider API mutation

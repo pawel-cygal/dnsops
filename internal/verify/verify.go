@@ -99,6 +99,12 @@ func Run(ctx context.Context, resolver, file string, spec Spec) Report {
 		}
 		res, err := rawdns.Query(ctx, resolver, chk.Name, chk.Type)
 		if err != nil {
+			if chk.MustNotExist && isNotFoundErr(err) {
+				row.OK = true
+				report.Matched++
+				report.Results = append(report.Results, row)
+				continue
+			}
 			row.Error = err.Error()
 			report.Errors++
 			report.Results = append(report.Results, row)
@@ -236,7 +242,7 @@ func mismatchMessage(c Check, actual []rawdns.Record) string {
 	}
 	if len(c.Contains) > 0 {
 		for _, got := range values {
-		ok := true
+			ok := true
 			for _, fragment := range c.Contains {
 				if !strings.Contains(got, fragment) {
 					ok = false
@@ -273,6 +279,14 @@ func ttlMismatchMessage(c Check, actual []rawdns.Record, prefix string) string {
 	default:
 		return prefix
 	}
+}
+
+func isNotFoundErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToUpper(err.Error())
+	return strings.Contains(msg, "NXDOMAIN") || strings.Contains(msg, "NO SOA ANSWER")
 }
 
 func cloneAndSort(in []string) []string {
