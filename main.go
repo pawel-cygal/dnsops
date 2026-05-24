@@ -14,6 +14,10 @@ func main() {
 	switch os.Args[1] {
 	case "lookup":
 		cmdLookup(os.Args[2:])
+	case "reverse":
+		cmdReverse(os.Args[2:])
+	case "caa":
+		cmdCAA(os.Args[2:])
 	case "soa":
 		cmdSOA(os.Args[2:])
 	case "delegations":
@@ -42,6 +46,8 @@ func usage() {
 
 Usage:
   dnsops lookup <name> <type> [--resolver IP:PORT] [--json|--yaml] [--ttl] [--watch] [--interval 5s] [--timeout 1m] [--max-iterations 60]
+  dnsops reverse <ip> [--resolver IP:PORT] [--json|--yaml]
+  dnsops caa <domain> [--resolver IP:PORT] [--json|--yaml]
   dnsops soa <zone> [--resolver IP:PORT] [--json]
   dnsops delegations <zone> [--resolver IP:PORT] [--json]
   dnsops propagate <name> <type> [--profile global] [--profile eu] [--resolvers ip:53,ip:53] [--json|--yaml] [--watch] [--interval 5s] [--timeout 1m] [--max-iterations 60] [--until-ok]

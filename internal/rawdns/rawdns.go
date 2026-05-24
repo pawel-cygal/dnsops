@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,6 +28,11 @@ type SOAResult struct {
 	Retry   uint32 `json:"retry"`
 	Expire  uint32 `json:"expire"`
 	MinTTL  uint32 `json:"minttl"`
+}
+
+type DelegationResult struct {
+	NS   []string            `json:"ns"`
+	Glue map[string][]string `json:"glue,omitempty"`
 }
 
 func Query(ctx context.Context, resolver, name, rrType string) ([]Record, error) {
@@ -82,6 +88,24 @@ func LookupSOA(ctx context.Context, resolver, zone string) (SOAResult, error) {
 	return SOAResult{}, fmt.Errorf("no SOA answer")
 }
 
+func LookupDelegation(ctx context.Context, resolver, zone string) (DelegationResult, error) {
+	msg := new(dns.Msg)
+	msg.SetQuestion(dns.Fqdn(strings.TrimSpace(zone)), dns.TypeNS)
+	client := &dns.Client{Timeout: 5 * time.Second}
+	resp, _, err := client.ExchangeContext(ctx, msg, normalizeResolver(resolver))
+	if err != nil {
+		return DelegationResult{}, err
+	}
+	if resp.Rcode != dns.RcodeSuccess {
+		return DelegationResult{}, fmt.Errorf("rcode %s", dns.RcodeToString[resp.Rcode])
+	}
+	out := DelegationResult{
+		NS: extractNS(resp.Answer, resp.Ns),
+	}
+	out.Glue = extractGlue(out.NS, resp.Extra)
+	return out, nil
+}
+
 func parseType(rrType string) (uint16, error) {
 	switch strings.ToUpper(strings.TrimSpace(rrType)) {
 	case "A":
@@ -90,12 +114,16 @@ func parseType(rrType string) (uint16, error) {
 		return dns.TypeAAAA, nil
 	case "CNAME":
 		return dns.TypeCNAME, nil
+	case "PTR":
+		return dns.TypePTR, nil
 	case "MX":
 		return dns.TypeMX, nil
 	case "NS":
 		return dns.TypeNS, nil
 	case "TXT":
 		return dns.TypeTXT, nil
+	case "CAA":
+		return dns.TypeCAA, nil
 	default:
 		return 0, fmt.Errorf("unsupported type %q", rrType)
 	}
@@ -126,16 +154,78 @@ func toRecord(rr dns.RR) (Record, bool) {
 		rec.Data = v.AAAA.String()
 	case *dns.CNAME:
 		rec.Data = strings.TrimSuffix(v.Target, ".")
+	case *dns.PTR:
+		rec.Data = strings.TrimSuffix(v.Ptr, ".")
 	case *dns.MX:
 		rec.Data = fmt.Sprintf("%d %s", v.Preference, strings.TrimSuffix(v.Mx, "."))
 	case *dns.NS:
 		rec.Data = strings.TrimSuffix(v.Ns, ".")
 	case *dns.TXT:
 		rec.Data = strings.Join(v.Txt, "")
+	case *dns.CAA:
+		rec.Data = fmt.Sprintf("%d %s %q", v.Flag, strings.ToLower(v.Tag), v.Value)
 	case *dns.SOA:
 		rec.Data = fmt.Sprintf("%s %s serial=%d", strings.TrimSuffix(v.Ns, "."), strings.TrimSuffix(v.Mbox, "."), v.Serial)
 	default:
 		return Record{}, false
 	}
 	return rec, true
+}
+
+func extractNS(sections ...[]dns.RR) []string {
+	var out []string
+	for _, section := range sections {
+		for _, rr := range section {
+			if ns, ok := rr.(*dns.NS); ok {
+				out = append(out, strings.TrimSuffix(ns.Ns, "."))
+			}
+		}
+	}
+	return sortedUniqueStrings(out)
+}
+
+func extractGlue(nameservers []string, section []dns.RR) map[string][]string {
+	if len(nameservers) == 0 {
+		return nil
+	}
+	allowed := map[string]bool{}
+	for _, ns := range nameservers {
+		allowed[strings.TrimSuffix(strings.ToLower(ns), ".")] = true
+	}
+	out := map[string][]string{}
+	for _, rr := range section {
+		host := strings.TrimSuffix(strings.ToLower(rr.Header().Name), ".")
+		if !allowed[host] {
+			continue
+		}
+		switch v := rr.(type) {
+		case *dns.A:
+			out[host] = append(out[host], v.A.String())
+		case *dns.AAAA:
+			out[host] = append(out[host], v.AAAA.String())
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	for host, ips := range out {
+		out[host] = sortedUniqueStrings(ips)
+	}
+	return out
+}
+
+func sortedUniqueStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := append([]string(nil), in...)
+	slices.Sort(out)
+	j := 1
+	for i := 1; i < len(out); i++ {
+		if out[i] != out[i-1] {
+			out[j] = out[i]
+			j++
+		}
+	}
+	return out[:j]
 }

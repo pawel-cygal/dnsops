@@ -10,10 +10,16 @@ import (
 )
 
 type NSCheck struct {
-	Nameserver string            `json:"nameserver"`
-	NS         []string          `json:"ns,omitempty"`
-	SOA        *rawdns.SOAResult `json:"soa,omitempty"`
-	Error      string            `json:"error,omitempty"`
+	Nameserver    string              `json:"nameserver"`
+	NS            []string            `json:"ns,omitempty"`
+	SOA           *rawdns.SOAResult   `json:"soa,omitempty"`
+	Glue          []string            `json:"glue,omitempty"`
+	GlueByNS      map[string][]string `json:"glue_by_ns,omitempty"`
+	GlueExpected  bool                `json:"glue_expected,omitempty"`
+	GlueMissing   bool                `json:"glue_missing,omitempty"`
+	PossibleLame  bool                `json:"possible_lame,omitempty"`
+	AddressErrors []string            `json:"address_errors,omitempty"`
+	Error         string              `json:"error,omitempty"`
 }
 
 type Report struct {
@@ -28,6 +34,8 @@ type Report struct {
 	ParentMatchesChild  bool      `json:"parent_matches_child"`
 	ChildNSConsistent   bool      `json:"child_ns_consistent"`
 	SOASerialConsistent bool      `json:"soa_serial_consistent"`
+	GlueConsistent      bool      `json:"glue_consistent"`
+	PossibleLame        bool      `json:"possible_lame"`
 }
 
 func Run(ctx context.Context, discoveryResolver, zone string) (Report, error) {
@@ -52,23 +60,34 @@ func Run(ctx context.Context, discoveryResolver, zone string) (Report, error) {
 	}
 	for _, ns := range parentResolvers {
 		check := NSCheck{Nameserver: ns}
-		nsRecords, err := rawdns.Query(ctx, ns, zone, "NS")
+		delegation, err := rawdns.LookupDelegation(ctx, ns, zone)
 		if err != nil {
 			check.Error = err.Error()
 			report.ParentChecks = append(report.ParentChecks, check)
 			continue
 		}
-		check.NS = recordData(nsRecords)
+		check.NS = delegation.NS
+		check.GlueByNS = delegation.Glue
+		for _, delegatedNS := range check.NS {
+			check.Glue = append(check.Glue, delegation.Glue[strings.ToLower(delegatedNS)]...)
+		}
+		check.Glue = sortedUnique(check.Glue)
 		if len(report.ParentDelegation) == 0 && len(check.NS) > 0 {
 			report.ParentDelegation = append([]string(nil), check.NS...)
 		}
 		report.ParentChecks = append(report.ParentChecks, check)
 	}
 	for _, ns := range report.ParentDelegation {
-		check := NSCheck{Nameserver: ns}
+		check := NSCheck{
+			Nameserver:   ns,
+			GlueExpected: inBailiwick(zone, ns),
+		}
+		check.Glue = glueFor(report.ParentChecks, ns)
+		check.GlueMissing = check.GlueExpected && len(check.Glue) == 0
 		nsRecords, err := rawdns.Query(ctx, ns, zone, "NS")
 		if err != nil {
 			check.Error = err.Error()
+			check.PossibleLame = true
 			report.ChildChecks = append(report.ChildChecks, check)
 			continue
 		}
@@ -76,6 +95,7 @@ func Run(ctx context.Context, discoveryResolver, zone string) (Report, error) {
 		soa, err := rawdns.LookupSOA(ctx, ns, zone)
 		if err != nil {
 			check.Error = err.Error()
+			check.PossibleLame = true
 		} else {
 			check.SOA = &soa
 		}
@@ -86,6 +106,8 @@ func Run(ctx context.Context, discoveryResolver, zone string) (Report, error) {
 	report.ParentMatchesChild =
 		stringSlicesEqual(sortedCopy(report.ParentDelegation), sortedCopy(report.ChildApexNS))
 	report.SOASerialConsistent = soaSerialConsistent(report.ChildChecks)
+	report.GlueConsistent = glueConsistent(report.ChildChecks)
+	report.PossibleLame = possibleLame(report.ChildChecks)
 	return report, nil
 }
 
@@ -103,6 +125,21 @@ func recordData(in []rawdns.Record) []string {
 		out = append(out, r.Data)
 	}
 	return out
+}
+
+func glueFor(parentChecks []NSCheck, nameserver string) []string {
+	nameserver = strings.TrimSuffix(strings.ToLower(nameserver), ".")
+	for _, check := range parentChecks {
+		if len(check.NS) == 0 || len(check.Glue) == 0 {
+			continue
+		}
+		for _, delegatedNS := range check.NS {
+			if strings.TrimSuffix(strings.ToLower(delegatedNS), ".") == nameserver {
+				return append([]string(nil), check.GlueByNS[nameserver]...)
+			}
+		}
+	}
+	return nil
 }
 
 func soaSerialConsistent(checks []NSCheck) bool {
@@ -177,6 +214,46 @@ func majorityNS(checks []NSCheck) []string {
 		}
 	}
 	return append([]string(nil), best.values...)
+}
+
+func inBailiwick(zone, nameserver string) bool {
+	zone = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(zone)), ".")
+	nameserver = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(nameserver)), ".")
+	return nameserver == zone || strings.HasSuffix(nameserver, "."+zone)
+}
+
+func sortedUnique(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := append([]string(nil), in...)
+	sort.Strings(out)
+	j := 1
+	for i := 1; i < len(out); i++ {
+		if out[i] != out[i-1] {
+			out[j] = out[i]
+			j++
+		}
+	}
+	return out[:j]
+}
+
+func glueConsistent(checks []NSCheck) bool {
+	for _, c := range checks {
+		if c.GlueMissing {
+			return false
+		}
+	}
+	return true
+}
+
+func possibleLame(checks []NSCheck) bool {
+	for _, c := range checks {
+		if c.PossibleLame {
+			return true
+		}
+	}
+	return false
 }
 
 func sortedCopy(in []string) []string {

@@ -8,6 +8,8 @@ It is intentionally read-only. The goal is to make DNS changes, propagation chec
 
 Implemented commands:
 - `lookup`
+- `reverse`
+- `caa`
 - `soa`
 - `delegations`
 - `propagate`
@@ -19,6 +21,8 @@ Implemented commands:
 
 The current tool is already beyond the original MVP sketch:
 - basic record lookups
+- reverse PTR lookups
+- CAA inspection
 - propagation checks across multiple resolvers
 - recursive vs authoritative comparison
 - mail DNS checks
@@ -35,6 +39,8 @@ Examples:
 dnsops lookup app.example.com A
 dnsops lookup app.example.com A --ttl
 dnsops lookup app.example.com A --ttl --watch --interval 1s
+dnsops reverse 203.0.113.10
+dnsops caa example.com
 dnsops lookup example.com MX --resolver 1.1.1.1:53
 dnsops lookup _dmarc.example.com TXT --json
 
@@ -75,6 +81,28 @@ Notes:
 - `--ttl` uses raw DNS queries and returns answer records with TTLs
 - `lookup --ttl --watch --interval 1s` is the best fit when you want to watch TTLs converge in near real time without manually rerunning the command
 
+### `reverse`
+
+Current scope:
+- reverse PTR lookup for IPv4 and IPv6 addresses
+- plain text, `--json`, or `--yaml`
+- optional custom resolver via `--resolver`
+
+Good fit for:
+- validating PTRs during mail / reverse-DNS checks
+- checking what a public recursive resolver currently returns for an IP
+
+### `caa`
+
+Current scope:
+- fetches `CAA` records for a domain
+- plain text, `--json`, or `--yaml`
+- optional custom resolver via `--resolver`
+
+Good fit for:
+- confirming which CAs are currently authorized
+- checking `issue`, `issuewild`, and `iodef` entries before certificate changes
+
 ### `soa`
 
 Current scope:
@@ -97,6 +125,8 @@ Current scope:
 - queries the delegated child nameservers for the child apex NS set
 - checks whether child nameservers agree with each other
 - checks SOA serial consistency across child nameservers
+- checks whether in-bailiwick child nameservers appear to have parent-side glue
+- emits basic possible-lame hints when delegated nameservers fail zone NS/SOA checks
 
 Semantics:
 - `parent delegation` means what the parent zone delegates to the child
@@ -105,6 +135,8 @@ Semantics:
   - parent delegation and child apex NS differ
   - child nameservers disagree with each other
   - SOA serials disagree
+  - required glue appears missing
+  - a delegated nameserver looks possibly lame
 
 Limitations:
 - parent-zone discovery is still naive and does not use the Public Suffix List
@@ -267,6 +299,7 @@ Notes:
 The tool currently supports:
 - readable terminal output by default
 - `--json` on commands where machine-readable output is useful
+- `--yaml` on commands where human-readable structured output is useful
 
 Watch mode:
 - `propagate`, `compare`, and `verify` support `--watch`
@@ -296,8 +329,9 @@ That split keeps the common paths simple while allowing deeper diagnostics where
 ## Non-goals for now
 
 Not implemented yet:
-- richer delegation diagnostics such as glue/lame-delegation analysis
-- advanced `verify` policies like TTL thresholds or `must_not_exist`
+- full DNSSEC chain validation
+- deeper delegation analysis beyond the current glue / possible-lame hints
+- richer mail checks such as MTA-STS, DANE, or BIMI
 - provider API mutation
 - zone editing
 

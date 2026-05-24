@@ -30,7 +30,7 @@ func cmdDelegations(args []string) {
 	}
 	if *jsonOut {
 		printJSON(report)
-		if !report.ParentMatchesChild || !report.ChildNSConsistent || !report.SOASerialConsistent {
+		if !delegationHealthy(report) {
 			exitCode(1)
 		}
 		return
@@ -76,6 +76,13 @@ func cmdDelegations(args []string) {
 		line := c.Nameserver
 		if c.Error != "" {
 			fmt.Printf("  %-24s  error  %s\n", line, c.Error)
+			if c.GlueExpected {
+				if c.GlueMissing {
+					fmt.Printf("  %-24s  glue   missing (in-bailiwick nameserver)\n", "")
+				} else if len(c.Glue) > 0 {
+					fmt.Printf("  %-24s  glue   %s\n", "", strings.Join(c.Glue, ", "))
+				}
+			}
 			continue
 		}
 		fmt.Printf("  %-24s  ns=%s", line, strings.Join(c.NS, ", "))
@@ -83,10 +90,28 @@ func cmdDelegations(args []string) {
 			fmt.Printf("  serial=%d", c.SOA.Serial)
 		}
 		fmt.Println()
+		if c.GlueExpected {
+			if c.GlueMissing {
+				fmt.Printf("  %-24s  glue=missing\n", "")
+			} else if len(c.Glue) > 0 {
+				fmt.Printf("  %-24s  glue=%s\n", "", strings.Join(c.Glue, ", "))
+			}
+		}
+		if c.PossibleLame {
+			fmt.Printf("  %-24s  hint=possible lame delegation\n", "")
+		}
 	}
-	fmt.Printf("\nsummary: parent_matches_child=%v  child_ns_consistent=%v  soa_serial_consistent=%v\n",
-		report.ParentMatchesChild, report.ChildNSConsistent, report.SOASerialConsistent)
-	if !report.ParentMatchesChild || !report.ChildNSConsistent || !report.SOASerialConsistent {
+	fmt.Printf("\nsummary: parent_matches_child=%v  child_ns_consistent=%v  soa_serial_consistent=%v  glue_consistent=%v  possible_lame=%v\n",
+		report.ParentMatchesChild, report.ChildNSConsistent, report.SOASerialConsistent, report.GlueConsistent, report.PossibleLame)
+	if !delegationHealthy(report) {
 		exitCode(1)
 	}
+}
+
+func delegationHealthy(report delegation.Report) bool {
+	return report.ParentMatchesChild &&
+		report.ChildNSConsistent &&
+		report.SOASerialConsistent &&
+		report.GlueConsistent &&
+		!report.PossibleLame
 }

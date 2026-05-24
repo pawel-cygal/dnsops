@@ -76,3 +76,30 @@ func TestMajorityNS(t *testing.T) {
 		t.Fatalf("majorityNS() = %v, want %v", got, want)
 	}
 }
+
+func TestInBailiwick(t *testing.T) {
+	if !inBailiwick("example.com", "ns1.example.com") {
+		t.Fatal("expected in-bailiwick nameserver")
+	}
+	if inBailiwick("example.com", "ns1.example.net") {
+		t.Fatal("out-of-bailiwick nameserver should not require glue")
+	}
+}
+
+func TestGlueConsistent(t *testing.T) {
+	if !glueConsistent([]NSCheck{{GlueExpected: true, Glue: []string{"192.0.2.10"}}}) {
+		t.Fatal("present glue should be consistent")
+	}
+	if glueConsistent([]NSCheck{{GlueExpected: true, GlueMissing: true}}) {
+		t.Fatal("missing glue should not be consistent")
+	}
+}
+
+func TestPossibleLame(t *testing.T) {
+	if !possibleLame([]NSCheck{{PossibleLame: true}}) {
+		t.Fatal("expected possible lame=true")
+	}
+	if possibleLame([]NSCheck{{PossibleLame: false}}) {
+		t.Fatal("expected possible lame=false")
+	}
+}
